@@ -223,9 +223,39 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
     });
   }, [section.id, setChatHistories]);
 
+  const cleanupTranscript = useCallback(async (msgIndex) => {
+    // Get the current text at this index
+    const msgs = chatHistories[section.id] || [];
+    const msg = msgs[msgIndex];
+    if (!msg || msg.text.length < 5) return;
+
+    try {
+      const res = await fetch('/api/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: msg.text }),
+      });
+      const { cleaned } = await res.json();
+      if (cleaned && cleaned !== msg.text) {
+        setChatHistories(prev => {
+          const updated = [...(prev[section.id] || [])];
+          if (updated[msgIndex]) {
+            updated[msgIndex] = { ...updated[msgIndex], text: cleaned };
+          }
+          return { ...prev, [section.id]: updated };
+        });
+      }
+    } catch { /* silent fail — raw transcript stays */ }
+  }, [section.id, chatHistories, setChatHistories]);
+
   const finalizeTurn = useCallback(() => {
+    // Clean up any pending transcript messages
+    const userIdx = pendingTranscriptRef.current.user;
+    const modelIdx = pendingTranscriptRef.current.model;
+    if (userIdx != null) cleanupTranscript(userIdx);
+    if (modelIdx != null) cleanupTranscript(modelIdx);
     pendingTranscriptRef.current = { user: null, model: null };
-  }, []);
+  }, [cleanupTranscript]);
 
   const addChatMessage = useCallback((role, text) => {
     // For non-transcript messages (system, tool saves), always create a new bubble
