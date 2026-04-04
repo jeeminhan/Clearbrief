@@ -663,6 +663,18 @@ export default function BriefBuilder() {
     }
   };
 
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
+
+  const handleRestart = () => {
+    setFormData({});
+    setChatHistories({});
+    setSenderName('');
+    setProjectName('');
+    setActiveSection(0);
+    setShowRestartConfirm(false);
+    localStorage.removeItem(STORAGE_KEY);
+  };
+
   const handleDownload = () => {
     const briefText = generateBriefText(formData, projectName, senderName);
     const blob = new Blob([briefText], { type: 'text/plain;charset=utf-8' });
@@ -758,6 +770,34 @@ export default function BriefBuilder() {
           >
             {progress.pct === 100 ? '📋  Export Brief' : `📋  Export (${progress.pct}%)`}
           </button>
+          {showRestartConfirm ? (
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <button
+                onClick={handleRestart}
+                style={{
+                  flex: 1, padding: '9px 0', border: 'none', borderRadius: 8, fontFamily: 'inherit',
+                  background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                  color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                }}
+              >Yes, restart</button>
+              <button
+                onClick={() => setShowRestartConfirm(false)}
+                style={{
+                  flex: 1, padding: '9px 0', border: '1px solid #253346', borderRadius: 8, fontFamily: 'inherit',
+                  background: 'transparent', color: '#94a3b8', fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                }}
+              >Cancel</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowRestartConfirm(true)}
+              style={{
+                width: '100%', padding: '9px 0', border: '1px solid #253346', borderRadius: 10, fontFamily: 'inherit',
+                background: 'transparent', color: '#64748b', fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                marginTop: 8,
+              }}
+            >Start Over</button>
+          )}
         </div>
       </div>
 
