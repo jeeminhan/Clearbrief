@@ -99,6 +99,21 @@ function renderMd(text) {
   });
 }
 
+function mergeChunks(current, incoming) {
+  if (!current) return incoming;
+  if (!incoming) return current;
+  if (incoming === current || current.endsWith(incoming)) return current;
+  if (incoming.startsWith(current)) return incoming;
+  // Check for overlap
+  const maxOverlap = Math.min(current.length, incoming.length);
+  for (let i = maxOverlap; i > 0; i--) {
+    if (current.slice(-i) === incoming.slice(0, i)) {
+      return current + incoming.slice(i);
+    }
+  }
+  return current + ' ' + incoming;
+}
+
 function generateBriefText(formData, projectName, senderName) {
   let t = `PROJECT COLLABORATION BRIEF\n${'═'.repeat(40)}\n`;
   if (projectName) t += `Project: ${projectName}\n`;
@@ -177,12 +192,49 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
     };
   }, [section.id]);
 
+  // Transcript merging — accumulate chunks into the last message of the same role
+  const pendingTranscriptRef = useRef({ user: null, model: null });
+
+  const appendTranscript = useCallback((role, text) => {
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    if (!normalized) return;
+    const chatRole = role === 'user' ? 'user' : 'ai';
+    const otherRole = role === 'user' ? 'model' : 'user';
+
+    setChatHistories(prev => {
+      const msgs = [...(prev[section.id] || [])];
+      const ownIdx = pendingTranscriptRef.current[role];
+
+      // Close the other role's pending message
+      pendingTranscriptRef.current[otherRole] = null;
+
+      if (ownIdx != null && msgs[ownIdx] && msgs[ownIdx].role === chatRole) {
+        // Merge into existing pending message
+        const existing = msgs[ownIdx].text;
+        msgs[ownIdx] = { ...msgs[ownIdx], text: mergeChunks(existing, normalized) };
+        return { ...prev, [section.id]: msgs };
+      }
+
+      // Start a new message
+      const newMsg = { role: chatRole, text: normalized, id: Date.now() + Math.random() };
+      msgs.push(newMsg);
+      pendingTranscriptRef.current[role] = msgs.length - 1;
+      return { ...prev, [section.id]: msgs };
+    });
+  }, [section.id, setChatHistories]);
+
+  const finalizeTurn = useCallback(() => {
+    pendingTranscriptRef.current = { user: null, model: null };
+  }, []);
+
   const addChatMessage = useCallback((role, text) => {
+    // For non-transcript messages (system, tool saves), always create a new bubble
+    finalizeTurn();
     setChatHistories(prev => ({
       ...prev,
       [section.id]: [...(prev[section.id] || []), { role, text, id: Date.now() + Math.random() }],
     }));
-  }, [section.id, setChatHistories]);
+  }, [section.id, setChatHistories, finalizeTurn]);
 
   const handleVoiceToggle = useCallback(async () => {
     // Stop voice
@@ -193,6 +245,7 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
       geminiClientRef.current = null;
       setVoiceActive(false);
       setVoiceConnecting(false);
+      finalizeTurn();
       addChatMessage('ai', 'Voice chat ended. You can keep typing or tap the mic to start again.');
       return;
     }
@@ -214,9 +267,7 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
         systemPrompt,
         tools: VOICE_TOOLS,
         onAudioResponse: (pcmData) => { audioManager.playAudio(pcmData); },
-        onTranscript: (role, text) => {
-          if (text.trim()) addChatMessage(role === 'user' ? 'user' : 'ai', text);
-        },
+        onTranscript: (role, text) => { appendTranscript(role, text); },
         onToolCall: ({ id, name, args }) => {
           if (name === 'save_field' && args.fieldKey && args.answer) {
             const fullKey = `${section.id}.${args.fieldKey}`;
@@ -227,7 +278,7 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
             client.sendToolResponse(id, name, { error: 'Unknown tool' });
           }
         },
-        onTurnComplete: () => {},
+        onTurnComplete: () => { finalizeTurn(); },
         onError: (err) => {
           console.error('[Voice]', err);
           setVoiceActive(false);
@@ -439,85 +490,102 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
       </div>
 
       <div style={{ padding: '14px 20px', background: 'linear-gradient(transparent, #0b1121 40%)' }}>
-        <div style={{
-          display: 'flex', gap: 8, alignItems: 'flex-end',
-          background: '#141e30', border: '1px solid #253346',
-          borderRadius: 14, padding: '8px 8px 8px 16px',
-        }}>
-          <textarea
-            ref={inputRef}
-            value={userInput}
-            onChange={e => setUserInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder={allDone ? 'All fields done! Type to revise...' : 'Type your answer...'}
-            rows={2}
-            style={{
-              flex: 1, resize: 'none', border: 'none', background: 'transparent',
-              color: '#e2e8f0', fontSize: 14, fontFamily: 'inherit', lineHeight: 1.5, padding: '4px 0',
-            }}
-          />
-          {!allDone && (
+        {voiceActive ? (
+          /* Voice mode: centered stop button */
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
+            background: '#141e30', border: '1px solid #253346',
+            borderRadius: 14, padding: '12px 16px',
+          }}>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>Listening...</span>
             <button
-              onClick={handleSkip}
-              disabled={isLoading}
-              title="Skip this field"
+              onClick={handleVoiceToggle}
+              title="Stop voice chat"
               style={{
-                height: 36, padding: '0 10px', borderRadius: 10,
-                border: '1px solid #253346', background: 'transparent',
-                color: '#64748b', fontSize: 11, fontWeight: 600, fontFamily: 'inherit',
-                cursor: isLoading ? 'default' : 'pointer', flexShrink: 0,
-                letterSpacing: '0.02em',
+                width: 44, height: 44, borderRadius: 12, border: 'none',
+                background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                color: '#fff', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                position: 'relative',
               }}
-            >Skip</button>
-          )}
-          <button
-            onClick={handleVoiceToggle}
-            title={voiceActive ? 'Stop voice chat' : 'Start voice chat'}
-            style={{
-              width: 36, height: 36, borderRadius: 10, border: 'none',
-              background: voiceActive
-                ? 'linear-gradient(135deg, #ef4444, #dc2626)'
-                : voiceConnecting
-                  ? '#1e293b'
-                  : 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
-              color: '#fff', fontSize: 15,
-              cursor: voiceConnecting ? 'default' : 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              position: 'relative',
-            }}
-          >
-            {voiceConnecting ? (
-              <div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid #64748b', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
-            ) : voiceActive ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" rx="2" />
               </svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" y1="19" x2="12" y2="22" />
-              </svg>
-            )}
-            {voiceActive && (
               <span style={{
-                position: 'absolute', inset: -3, borderRadius: 13, border: '2px solid #ef4444',
+                position: 'absolute', inset: -4, borderRadius: 16, border: '2px solid #ef4444',
                 animation: 'pulse 1.5s ease-in-out infinite', opacity: 0.5,
               }} />
+            </button>
+          </div>
+        ) : (
+          /* Text mode: textarea + skip + mic + send */
+          <div style={{
+            display: 'flex', gap: 8, alignItems: 'flex-end',
+            background: '#141e30', border: '1px solid #253346',
+            borderRadius: 14, padding: '8px 8px 8px 16px',
+          }}>
+            <textarea
+              ref={inputRef}
+              value={userInput}
+              onChange={e => setUserInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+              placeholder={allDone ? 'All fields done! Type to revise...' : 'Type your answer...'}
+              rows={2}
+              style={{
+                flex: 1, resize: 'none', border: 'none', background: 'transparent',
+                color: '#e2e8f0', fontSize: 14, fontFamily: 'inherit', lineHeight: 1.5, padding: '4px 0',
+              }}
+            />
+            {!allDone && (
+              <button
+                onClick={handleSkip}
+                disabled={isLoading}
+                title="Skip this field"
+                style={{
+                  height: 36, padding: '0 10px', borderRadius: 10,
+                  border: '1px solid #253346', background: 'transparent',
+                  color: '#64748b', fontSize: 11, fontWeight: 600, fontFamily: 'inherit',
+                  cursor: isLoading ? 'default' : 'pointer', flexShrink: 0,
+                  letterSpacing: '0.02em',
+                }}
+              >Skip</button>
             )}
-          </button>
-          <button
-            onClick={handleSend}
-            disabled={!userInput.trim() || isLoading}
-            style={{
-              width: 36, height: 36, borderRadius: 10, border: 'none',
-              background: userInput.trim() ? 'linear-gradient(135deg, #3b82f6, #6366f1)' : '#1e293b',
-              color: '#fff', fontSize: 15,
-              cursor: userInput.trim() ? 'pointer' : 'default',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}
-          >↑</button>
-        </div>
+            <button
+              onClick={handleVoiceToggle}
+              title="Start voice chat"
+              disabled={voiceConnecting}
+              style={{
+                width: 36, height: 36, borderRadius: 10, border: 'none',
+                background: voiceConnecting ? '#1e293b' : 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                color: '#fff', fontSize: 15,
+                cursor: voiceConnecting ? 'default' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}
+            >
+              {voiceConnecting ? (
+                <div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid #64748b', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                </svg>
+              )}
+            </button>
+            <button
+              onClick={handleSend}
+              disabled={!userInput.trim() || isLoading}
+              style={{
+                width: 36, height: 36, borderRadius: 10, border: 'none',
+                background: userInput.trim() ? 'linear-gradient(135deg, #3b82f6, #6366f1)' : '#1e293b',
+                color: '#fff', fontSize: 15,
+                cursor: userInput.trim() ? 'pointer' : 'default',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}
+            >↑</button>
+          </div>
+        )}
       </div>
     </div>
   );
