@@ -12,7 +12,17 @@ export async function POST(req) {
       );
     }
 
-    const systemPrompt = `You are a friendly project brief coach. Help the user write a clear answer for the "${fieldLabel}" field of a project collaboration brief. Keep responses to 2-4 sentences. If their answer is solid, acknowledge it warmly and suggest a polished version if helpful. If vague, ask ONE specific follow-up. Be encouraging and concise. Don't use bullet points.`;
+    const systemPrompt = `You are a friendly project brief coach. Help the user write a clear answer for the "${fieldLabel}" field of a project collaboration brief.
+
+IMPORTANT: You MUST respond with valid JSON in this exact format:
+{"advance": true or false, "message": "your response here"}
+
+Set "advance" to true ONLY when the user's answer is specific enough to be useful in a project brief. Set "advance" to false if the answer is vague, incomplete, or you need to ask a follow-up question.
+
+When advance is true: acknowledge their answer warmly in 1-2 sentences.
+When advance is false: ask ONE specific follow-up question to help them improve their answer. Be encouraging and concise.
+
+Don't use bullet points in your message. Don't use markdown in the JSON string value.`;
 
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
@@ -51,11 +61,26 @@ export async function POST(req) {
     }
 
     const data = await res.json();
-    const text =
+    const rawText =
       data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      'Your answer has been saved!';
+      '{"advance": true, "message": "Your answer has been saved!"}';
 
-    return Response.json({ text });
+    // Parse the JSON response from the AI
+    let advance = true;
+    let text = rawText;
+    try {
+      // Strip markdown code fences if present
+      const cleaned = rawText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      advance = parsed.advance ?? true;
+      text = parsed.message || rawText;
+    } catch {
+      // If JSON parsing fails, treat as advance=true with raw text
+      advance = true;
+      text = rawText;
+    }
+
+    return Response.json({ text, advance });
   } catch (err) {
     console.error('Chat API error:', err);
     return Response.json(

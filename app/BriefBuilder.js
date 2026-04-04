@@ -116,6 +116,7 @@ function generateBriefText(formData, projectName, senderName) {
 function SectionChat({ section, formData, setFormData, chatHistories, setChatHistories }) {
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingAnswer, setPendingAnswer] = useState('');
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
   const messages = chatHistories[section.id] || [];
@@ -150,10 +151,43 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
         body: JSON.stringify({ message: userText, fieldLabel: field.label, fieldPrompt: field.prompt }),
       });
       const data = await res.json();
-      return data.text || 'Your answer has been saved!';
+      return { text: data.text || 'Your answer has been saved!', advance: data.advance ?? true };
     } catch {
-      return 'Connection issue — your answer was saved. You can refine it later.';
+      return { text: 'Connection issue — your answer was saved. You can refine it later.', advance: true };
     }
+  };
+
+  const advanceToNextField = (fieldIdx) => {
+    const nextIdx = fieldIdx + 1;
+    let nextPrompt = '';
+    if (nextIdx < section.fields.length) {
+      const nf = section.fields[nextIdx];
+      nextPrompt = `\n\nNext up — **${nf.label}**: ${nf.prompt}`;
+    } else {
+      nextPrompt = `\n\n**${section.title}** is complete! Move on to the next section or revise anything here.`;
+    }
+    return nextPrompt;
+  };
+
+  const handleSkip = () => {
+    if (isLoading) return;
+    const fieldIdx = getCurrentFieldIndex();
+    const field = section.fields[fieldIdx];
+    const allDone = section.fields.filter(f => formData[`${section.id}.${f.key}`]).length === section.fields.length;
+    if (allDone) return;
+
+    // Save empty/skip marker so we advance past this field
+    setFormData(prev => ({ ...prev, [`${section.id}.${field.key}`]: '(Skipped)' }));
+    setPendingAnswer('');
+
+    const skipMsg = { role: 'user', text: '⏭ Skipped', id: Date.now() };
+    const nextText = `No problem, we can come back to **${field.label}** later.` + advanceToNextField(fieldIdx);
+    const aiMsg = { role: 'ai', text: nextText, id: Date.now() + 1 };
+
+    setChatHistories(prev => ({
+      ...prev,
+      [section.id]: [...(prev[section.id] || []), skipMsg, aiMsg],
+    }));
   };
 
   const handleSend = async () => {
@@ -165,7 +199,9 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
     const fieldIdx = getCurrentFieldIndex();
     const field = section.fields[fieldIdx];
 
-    setFormData(prev => ({ ...prev, [`${section.id}.${field.key}`]: text }));
+    // Accumulate the user's answer for this field (in case of follow-ups)
+    const accumulated = pendingAnswer ? `${pendingAnswer}\n${text}` : text;
+    setPendingAnswer(accumulated);
 
     const userMsg = { role: 'user', text, id: Date.now() };
     setChatHistories(prev => ({
@@ -173,17 +209,17 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
       [section.id]: [...(prev[section.id] || []), userMsg],
     }));
 
-    const aiText = await callAI(text, field);
+    const { text: aiText, advance } = await callAI(text, field);
     setIsLoading(false);
 
-    const nextIdx = fieldIdx + 1;
     let fullAiText = aiText;
-    if (nextIdx < section.fields.length) {
-      const nf = section.fields[nextIdx];
-      fullAiText += `\n\nNext up — **${nf.label}**: ${nf.prompt}`;
-    } else {
-      fullAiText += `\n\n✅ **${section.title}** is complete! Move on to the next section or revise anything here.`;
+    if (advance) {
+      // AI says the answer is good — save it and move on
+      setFormData(prev => ({ ...prev, [`${section.id}.${field.key}`]: accumulated }));
+      setPendingAnswer('');
+      fullAiText += advanceToNextField(fieldIdx);
     }
+    // If advance is false, the AI asked a follow-up — stay on the same field
 
     setChatHistories(prev => ({
       ...prev,
@@ -278,6 +314,20 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
               color: '#e2e8f0', fontSize: 14, fontFamily: 'inherit', lineHeight: 1.5, padding: '4px 0',
             }}
           />
+          {!allDone && (
+            <button
+              onClick={handleSkip}
+              disabled={isLoading}
+              title="Skip this field"
+              style={{
+                height: 36, padding: '0 10px', borderRadius: 10,
+                border: '1px solid #253346', background: 'transparent',
+                color: '#64748b', fontSize: 11, fontWeight: 600, fontFamily: 'inherit',
+                cursor: isLoading ? 'default' : 'pointer', flexShrink: 0,
+                letterSpacing: '0.02em',
+              }}
+            >Skip</button>
+          )}
           <button
             onClick={handleSend}
             disabled={!userInput.trim() || isLoading}
@@ -296,14 +346,37 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
 }
 
 /* ───────────────────────── MAIN APP ───────────────────────── */
+const STORAGE_KEY = 'briefbuilder_state';
+
+function loadSavedState() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveState(formData, chatHistories, senderName, projectName) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ formData, chatHistories, senderName, projectName }));
+  } catch { /* storage full or unavailable */ }
+}
+
 export default function BriefBuilder() {
   const [activeSection, setActiveSection] = useState(0);
-  const [formData, setFormData] = useState({});
-  const [chatHistories, setChatHistories] = useState({});
+  const [formData, setFormData] = useState(() => loadSavedState()?.formData ?? {});
+  const [chatHistories, setChatHistories] = useState(() => loadSavedState()?.chatHistories ?? {});
   const [showExportModal, setShowExportModal] = useState(false);
-  const [senderName, setSenderName] = useState('');
-  const [projectName, setProjectName] = useState('');
+  const [senderName, setSenderName] = useState(() => loadSavedState()?.senderName ?? '');
+  const [projectName, setProjectName] = useState(() => loadSavedState()?.projectName ?? '');
   const [copied, setCopied] = useState(false);
+
+  // Persist state to localStorage on changes
+  useEffect(() => {
+    saveState(formData, chatHistories, senderName, projectName);
+  }, [formData, chatHistories, senderName, projectName]);
 
   const progress = (() => {
     let done = 0, total = 0;
