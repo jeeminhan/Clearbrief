@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { AudioManager } from '../lib/audio';
+import { GeminiLiveClient } from '../lib/gemini-live';
 
 /* ───────────────────────── SECTIONS ───────────────────────── */
 const SECTIONS = [
@@ -112,6 +114,44 @@ function generateBriefText(formData, projectName, senderName) {
   return t;
 }
 
+/* ───────────────────────── VOICE TOOLS ───────────────────────── */
+function buildVoiceSystemPrompt(section, formData) {
+  const fieldStatus = section.fields.map(f => {
+    const val = formData[`${section.id}.${f.key}`];
+    return `- ${f.label}: ${val || '(empty)'} — Prompt: ${f.prompt}`;
+  }).join('\n');
+
+  return `You are a relaxed, friendly project brief coach having a casual voice conversation. You're helping the user fill out the "${section.title}" section of a project brief.
+
+Current fields and their status:
+${fieldStatus}
+
+RULES:
+- Talk like a friend, not a form. Be warm, casual, and encouraging.
+- Listen to what the user says and extract useful information for the brief fields.
+- When you hear something that answers a field (even roughly), call the save_field tool with a clean, polished version of what they said.
+- You can fill multiple fields from a single rambling answer — extract everything useful.
+- Don't demand perfect answers. If they say "it's like an app for tracking travel credit card points", that's a perfectly good one-liner — save it.
+- Guide the conversation naturally toward unfilled fields, but don't be rigid about order.
+- Keep your spoken responses SHORT — 1-2 sentences max. This is a conversation, not a lecture.
+- When all fields in this section are filled, let them know and suggest moving to the next section.`;
+}
+
+const VOICE_TOOLS = [{
+  functionDeclarations: [{
+    name: 'save_field',
+    description: 'Save a polished answer for a brief field. Call this whenever the user says something that answers one of the fields.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        fieldKey: { type: 'STRING', description: 'The field key to save (e.g. "oneLiner", "problem", "targetUsers")' },
+        answer: { type: 'STRING', description: 'The polished, clean answer extracted from what the user said' },
+      },
+      required: ['fieldKey', 'answer'],
+    },
+  }],
+}];
+
 /* ───────────────────────── SECTION CHAT ───────────────────────── */
 function SectionChat({ section, formData, setFormData, chatHistories, setChatHistories }) {
   const [userInput, setUserInput] = useState('');
@@ -120,6 +160,103 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
   const messages = chatHistories[section.id] || [];
+
+  // Voice state
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceConnecting, setVoiceConnecting] = useState(false);
+  const audioManagerRef = useRef(null);
+  const geminiClientRef = useRef(null);
+  const formDataRef = useRef(formData);
+  useEffect(() => { formDataRef.current = formData; }, [formData]);
+
+  // Cleanup voice on unmount or section change
+  useEffect(() => {
+    return () => {
+      audioManagerRef.current?.destroy();
+      geminiClientRef.current?.disconnect();
+    };
+  }, [section.id]);
+
+  const addChatMessage = useCallback((role, text) => {
+    setChatHistories(prev => ({
+      ...prev,
+      [section.id]: [...(prev[section.id] || []), { role, text, id: Date.now() + Math.random() }],
+    }));
+  }, [section.id, setChatHistories]);
+
+  const handleVoiceToggle = useCallback(async () => {
+    // Stop voice
+    if (voiceActive || voiceConnecting) {
+      audioManagerRef.current?.destroy();
+      audioManagerRef.current = null;
+      geminiClientRef.current?.disconnect();
+      geminiClientRef.current = null;
+      setVoiceActive(false);
+      setVoiceConnecting(false);
+      addChatMessage('ai', 'Voice chat ended. You can keep typing or tap the mic to start again.');
+      return;
+    }
+
+    // Start voice
+    setVoiceConnecting(true);
+    try {
+      const tokenRes = await fetch('/api/gemini/token');
+      if (!tokenRes.ok) throw new Error('Failed to get token');
+      const { token } = await tokenRes.json();
+
+      const audioManager = new AudioManager();
+      audioManagerRef.current = audioManager;
+
+      const systemPrompt = buildVoiceSystemPrompt(section, formDataRef.current);
+
+      const client = new GeminiLiveClient({
+        token,
+        systemPrompt,
+        tools: VOICE_TOOLS,
+        onAudioResponse: (pcmData) => { audioManager.playAudio(pcmData); },
+        onTranscript: (role, text) => {
+          if (text.trim()) addChatMessage(role === 'user' ? 'user' : 'ai', text);
+        },
+        onToolCall: ({ id, name, args }) => {
+          if (name === 'save_field' && args.fieldKey && args.answer) {
+            const fullKey = `${section.id}.${args.fieldKey}`;
+            setFormData(prev => ({ ...prev, [fullKey]: args.answer }));
+            addChatMessage('ai', `Saved **${args.fieldKey}**: "${args.answer}"`);
+            client.sendToolResponse(id, name, { success: true });
+          } else {
+            client.sendToolResponse(id, name, { error: 'Unknown tool' });
+          }
+        },
+        onTurnComplete: () => {},
+        onError: (err) => {
+          console.error('[Voice]', err);
+          setVoiceActive(false);
+          setVoiceConnecting(false);
+          addChatMessage('ai', 'Voice connection lost. Tap the mic to try again.');
+        },
+        onConnectionChange: (connected) => {
+          if (connected) {
+            setVoiceConnecting(false);
+            setVoiceActive(true);
+          }
+        },
+      });
+
+      geminiClientRef.current = client;
+      client.connect();
+
+      // Start mic capture after a brief delay for setup
+      await new Promise(r => setTimeout(r, 500));
+      await audioManager.startCapture((pcmData) => {
+        client.sendAudio(pcmData);
+      });
+
+    } catch (err) {
+      console.error('[Voice] Init failed:', err);
+      setVoiceConnecting(false);
+      addChatMessage('ai', 'Could not start voice chat. Check your microphone permissions and try again.');
+    }
+  }, [voiceActive, voiceConnecting, section, setFormData, addChatMessage]);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isLoading]);
   useEffect(() => { inputRef.current?.focus(); }, [section.id]);
@@ -151,9 +288,13 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
         body: JSON.stringify({ message: userText, fieldLabel: field.label, fieldPrompt: field.prompt }),
       });
       const data = await res.json();
-      return { text: data.text || 'Your answer has been saved!', advance: data.advance ?? true };
+      return {
+        text: data.text || 'Your answer has been saved!',
+        advance: data.advance ?? true,
+        extractedAnswer: data.extractedAnswer || '',
+      };
     } catch {
-      return { text: 'Connection issue — your answer was saved. You can refine it later.', advance: true };
+      return { text: 'Connection issue — your answer was saved. You can refine it later.', advance: true, extractedAnswer: '' };
     }
   };
 
@@ -209,13 +350,14 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
       [section.id]: [...(prev[section.id] || []), userMsg],
     }));
 
-    const { text: aiText, advance } = await callAI(text, field);
+    const { text: aiText, advance, extractedAnswer } = await callAI(text, field);
     setIsLoading(false);
 
     let fullAiText = aiText;
     if (advance) {
-      // AI says the answer is good — save it and move on
-      setFormData(prev => ({ ...prev, [`${section.id}.${field.key}`]: accumulated }));
+      // AI says the answer is good — save the AI's polished version (or raw if no extraction)
+      const answerToSave = extractedAnswer || accumulated;
+      setFormData(prev => ({ ...prev, [`${section.id}.${field.key}`]: answerToSave }));
       setPendingAnswer('');
       fullAiText += advanceToNextField(fieldIdx);
     }
@@ -328,6 +470,42 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
               }}
             >Skip</button>
           )}
+          <button
+            onClick={handleVoiceToggle}
+            title={voiceActive ? 'Stop voice chat' : 'Start voice chat'}
+            style={{
+              width: 36, height: 36, borderRadius: 10, border: 'none',
+              background: voiceActive
+                ? 'linear-gradient(135deg, #ef4444, #dc2626)'
+                : voiceConnecting
+                  ? '#1e293b'
+                  : 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+              color: '#fff', fontSize: 15,
+              cursor: voiceConnecting ? 'default' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              position: 'relative',
+            }}
+          >
+            {voiceConnecting ? (
+              <div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid #64748b', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+            ) : voiceActive ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="22" />
+              </svg>
+            )}
+            {voiceActive && (
+              <span style={{
+                position: 'absolute', inset: -3, borderRadius: 13, border: '2px solid #ef4444',
+                animation: 'pulse 1.5s ease-in-out infinite', opacity: 0.5,
+              }} />
+            )}
+          </button>
           <button
             onClick={handleSend}
             disabled={!userInput.trim() || isLoading}
