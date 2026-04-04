@@ -291,21 +291,27 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
             setVoiceActive(true);
           }
         },
+        onSetupComplete: async () => {
+          // Setup done — now start mic and kick off the conversation
+          try {
+            await audioManager.startCapture((pcmData) => {
+              client.sendAudio(pcmData);
+            });
+          } catch (err) {
+            console.error('[Voice] Mic start failed:', err);
+            addChatMessage('ai', 'Could not access microphone. Check permissions and try again.');
+            return;
+          }
+
+          // Ask the AI to start the conversation about the current field
+          const fieldIdx = getCurrentFieldIndex();
+          const currentField = section.fields[fieldIdx];
+          client.sendText(`Start the conversation. The current field is "${currentField.label}": ${currentField.prompt}. Greet me casually and ask about this.`);
+        },
       });
 
       geminiClientRef.current = client;
       client.connect();
-
-      // Wait for connection, then start mic and kick off the conversation
-      await new Promise(r => setTimeout(r, 1000));
-      await audioManager.startCapture((pcmData) => {
-        client.sendAudio(pcmData);
-      });
-
-      // Get the current field and ask the AI to start the conversation
-      const fieldIdx = getCurrentFieldIndex();
-      const currentField = section.fields[fieldIdx];
-      client.sendText(`Start the conversation. The current field is "${currentField.label}": ${currentField.prompt}. Greet me casually and ask about this.`);
 
     } catch (err) {
       console.error('[Voice] Init failed:', err);
