@@ -10,10 +10,6 @@ scope.outOfScope - Out of Scope: explicitly NOT building
 design.visualStyle - Visual Style: look and feel
 design.brandAssets - Brand Assets: logo, colors, fonts
 design.contentProvided - Content You'll Provide: what user supplies vs needs created
-technical.platform - Platform: web, iOS, Android, desktop
-technical.techStack - Tech Stack: technology preferences
-technical.integrations - Integrations: APIs or services needed
-technical.dataStorage - Data & Storage: what data, where stored
 timeline.launchDate - Target Launch: date or timeframe
 timeline.milestones - Key Milestones: major checkpoints
 timeline.availability - Your Availability: hours/week, best days

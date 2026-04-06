@@ -37,15 +37,6 @@ const TEMPLATES = {
         ],
       },
       {
-        id: 'technical', title: 'Technical Requirements', icon: '⚙️',
-        fields: [
-          { key: 'platform', label: 'Platform', prompt: 'Where will this live? Web, iOS, Android, desktop?' },
-          { key: 'techStack', label: 'Tech Stack', prompt: 'Any preferences on technology? (e.g. React, Firebase, Tailwind)' },
-          { key: 'integrations', label: 'Integrations', prompt: 'Does this need to connect to any APIs or services?' },
-          { key: 'dataStorage', label: 'Data & Storage', prompt: 'What data will this handle and where should it be stored?' },
-        ],
-      },
-      {
         id: 'timeline', title: 'Timeline & Milestones', icon: '📅',
         fields: [
           { key: 'launchDate', label: 'Target Launch', prompt: 'When do you want this done? Give a date or timeframe.' },
