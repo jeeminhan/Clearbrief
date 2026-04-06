@@ -17,7 +17,7 @@ export async function POST(req) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           system_instruction: {
-            parts: [{ text: 'Clean up this speech-to-text transcript. Fix typos, spacing, and grammar while keeping the exact meaning and tone. Return ONLY the cleaned text, nothing else. If the text is already clean, return it as-is.' }],
+            parts: [{ text: 'Clean up this speech-to-text transcript. The text has fragments joined together with broken word boundaries (e.g. "goodating" should be "good dating", "abouthe" should be "about the", "Who\'struggling" should be "Who\'s struggling"). Fix all word boundaries, spacing, punctuation, and grammar while keeping the exact meaning and tone. Return ONLY the cleaned text, nothing else.' }],
           },
           contents: [{ role: 'user', parts: [{ text }] }],
           generationConfig: { maxOutputTokens: 200, temperature: 0.1 },

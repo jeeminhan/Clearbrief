@@ -1,13 +1,5 @@
-export async function POST(req) {
-  try {
-    const { text, fileName } = await req.json();
-
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return Response.json({ error: 'API key not configured' }, { status: 500 });
-    }
-
-    const fieldSpec = `
+const FIELD_SPECS = {
+  general: `
 vision.oneLiner - One-Liner: one sentence elevator pitch
 vision.problem - Problem Statement: what problem this solves
 vision.targetUsers - Target Users: who are the primary users
@@ -33,8 +25,51 @@ team.teamMembers - Team Members: names, roles, responsibilities
 team.contactInfo - Contact Info: how to reach each person
 references.designFiles - Design Files: Figma, mockups
 references.existingCode - Existing Code: GitHub repo
-references.inspiration - Inspiration: competitors, articles, mood boards
-`.trim();
+references.inspiration - Inspiration: competitors, articles, mood boards`.trim(),
+  website: `
+business.businessName - Business Name
+business.businessType - What They Do: products or services offered
+business.targetCustomers - Target Customers: who are ideal customers
+business.uniqueValue - What Makes Them Special: competitive advantage
+pages.pages - Pages Needed: Home, About, Services, Gallery, Contact, etc.
+pages.heroMessage - Hero Message: main headline or tagline
+pages.services - Services / Products: main services or product categories
+pages.about - About / Story: business story, who runs it, experience
+media.existingPhotos - Existing Photos: photos of work, products, team
+media.photoNeeds - Photo Needs: new photos, stock, or AI-generated
+media.videoContent - Video: process videos, testimonials, tours
+media.portfolio - Portfolio / Gallery: what to showcase
+brand.logo - Logo: existing or needs design
+brand.colors - Colors: preferred colors or vibe
+brand.style - Visual Style: clean, rustic, bold, modern, etc.
+brand.inspiration - Sites You Like: reference websites
+features.contactForm - Contact / Quote Form: type of contact form
+features.socialMedia - Social Media: accounts to link
+features.ecommerce - Online Sales: products, gift cards, deposits
+features.otherFeatures - Other Features: blog, testimonials, maps, scheduling
+domain.domain - Domain Name: existing or desired
+domain.hosting - Hosting Preference
+domain.email - Business Email
+seo.location - Location / Service Area
+seo.keywords - Search Terms: what customers search
+seo.googleBusiness - Google Business Profile
+seo.analytics - Analytics preference
+logistics.timeline - Timeline: when site should be live
+logistics.budget - Budget: range including ongoing costs
+logistics.maintenance - Ongoing Updates: who updates after launch
+logistics.contact - Point of Contact: name, phone, email`.trim(),
+};
+
+export async function POST(req) {
+  try {
+    const { text, fileName, template } = await req.json();
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return Response.json({ error: 'API key not configured' }, { status: 500 });
+    }
+
+    const fieldSpec = FIELD_SPECS[template] || FIELD_SPECS.general;
 
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,

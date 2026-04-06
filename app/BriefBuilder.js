@@ -4,75 +4,163 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { AudioManager } from '../lib/audio';
 import { GeminiLiveClient } from '../lib/gemini-live';
 
-/* ───────────────────────── SECTIONS ───────────────────────── */
-const SECTIONS = [
-  {
-    id: 'vision', title: 'Project Vision', icon: '🔭',
-    fields: [
-      { key: 'oneLiner', label: 'One-Liner', prompt: 'Describe your project in one sentence — like an elevator pitch.' },
-      { key: 'problem', label: 'Problem Statement', prompt: 'What problem does this solve? Who has this problem and why does it matter?' },
-      { key: 'targetUsers', label: 'Target Users', prompt: 'Who are the primary users? Be specific — age, role, context.' },
-      { key: 'successCriteria', label: 'Success Criteria', prompt: 'How will you know this succeeded? Give 2–3 measurable outcomes.' },
+/* ───────────────────────── TEMPLATES ───────────────────────── */
+const TEMPLATES = {
+  general: {
+    name: 'General Project',
+    description: 'Any software, app, or creative project',
+    icon: '📋',
+    sections: [
+      {
+        id: 'vision', title: 'Project Vision', icon: '🔭',
+        fields: [
+          { key: 'oneLiner', label: 'One-Liner', prompt: 'Describe your project in one sentence — like an elevator pitch.' },
+          { key: 'problem', label: 'Problem Statement', prompt: 'What problem does this solve? Who has this problem and why does it matter?' },
+          { key: 'targetUsers', label: 'Target Users', prompt: 'Who are the primary users? Be specific — age, role, context.' },
+          { key: 'successCriteria', label: 'Success Criteria', prompt: 'How will you know this succeeded? Give 2–3 measurable outcomes.' },
+        ],
+      },
+      {
+        id: 'scope', title: 'Scope & Deliverables', icon: '📐',
+        fields: [
+          { key: 'mustHave', label: 'Must-Have Features', prompt: 'What are the non-negotiable features this project needs?' },
+          { key: 'niceToHave', label: 'Nice-to-Have', prompt: 'What would be great to include if time allows?' },
+          { key: 'outOfScope', label: 'Out of Scope', prompt: 'What are you explicitly NOT building in this phase?' },
+        ],
+      },
+      {
+        id: 'design', title: 'Design & Creative', icon: '🎨',
+        fields: [
+          { key: 'visualStyle', label: 'Visual Style', prompt: 'Describe the look and feel. Any reference sites or aesthetics you admire?' },
+          { key: 'brandAssets', label: 'Brand Assets', prompt: 'Do you have a logo, colors, fonts, or brand guide? Link them if possible.' },
+          { key: 'contentProvided', label: "Content You'll Provide", prompt: 'What will you supply (copy, images) vs. what you need created?' },
+        ],
+      },
+      {
+        id: 'technical', title: 'Technical Requirements', icon: '⚙️',
+        fields: [
+          { key: 'platform', label: 'Platform', prompt: 'Where will this live? Web, iOS, Android, desktop?' },
+          { key: 'techStack', label: 'Tech Stack', prompt: 'Any preferences on technology? (e.g. React, Firebase, Tailwind)' },
+          { key: 'integrations', label: 'Integrations', prompt: 'Does this need to connect to any APIs or services?' },
+          { key: 'dataStorage', label: 'Data & Storage', prompt: 'What data will this handle and where should it be stored?' },
+        ],
+      },
+      {
+        id: 'timeline', title: 'Timeline & Milestones', icon: '📅',
+        fields: [
+          { key: 'launchDate', label: 'Target Launch', prompt: 'When do you want this done? Give a date or timeframe.' },
+          { key: 'milestones', label: 'Key Milestones', prompt: 'Break it into phases — what are the major checkpoints?' },
+          { key: 'availability', label: 'Your Availability', prompt: 'How many hours/week can you dedicate? What days work best?' },
+          { key: 'communication', label: 'Communication', prompt: 'How should we stay in touch and how often should we sync?' },
+        ],
+      },
+      {
+        id: 'risks', title: 'Risks & Constraints', icon: '⚠️',
+        fields: [
+          { key: 'knownRisks', label: 'Known Risks', prompt: 'What could go wrong or slow things down?' },
+          { key: 'budget', label: 'Budget', prompt: 'Is there a budget? ($0 side project, specific amount, flexible)' },
+          { key: 'constraints', label: 'Other Constraints', prompt: 'Legal, accessibility, or platform constraints?' },
+        ],
+      },
+      {
+        id: 'team', title: 'Team & Roles', icon: '👥',
+        fields: [
+          { key: 'teamMembers', label: 'Team Members', prompt: "Who's involved? List names, roles, and responsibilities." },
+          { key: 'contactInfo', label: 'Contact Info', prompt: 'How can each person be reached? (email, Slack, etc.)' },
+        ],
+      },
+      {
+        id: 'references', title: 'References & Links', icon: '📎',
+        fields: [
+          { key: 'designFiles', label: 'Design Files', prompt: 'Figma files, mockups, or wireframes? Drop links.' },
+          { key: 'existingCode', label: 'Existing Code', prompt: 'GitHub repo or existing codebase to build on?' },
+          { key: 'inspiration', label: 'Inspiration', prompt: 'Links to competitors, articles, mood boards — anything that captures your vision.' },
+        ],
+      },
     ],
   },
-  {
-    id: 'scope', title: 'Scope & Deliverables', icon: '📐',
-    fields: [
-      { key: 'mustHave', label: 'Must-Have Features', prompt: 'What are the non-negotiable features this project needs?' },
-      { key: 'niceToHave', label: 'Nice-to-Have', prompt: 'What would be great to include if time allows?' },
-      { key: 'outOfScope', label: 'Out of Scope', prompt: 'What are you explicitly NOT building in this phase?' },
+  website: {
+    name: 'Business Website',
+    description: 'Build a website for a business or service',
+    icon: '🌐',
+    sections: [
+      {
+        id: 'business', title: 'Business Overview', icon: '🏢',
+        fields: [
+          { key: 'businessName', label: 'Business Name', prompt: 'What\'s the name of the business?' },
+          { key: 'businessType', label: 'What They Do', prompt: 'Describe the business in a few sentences. What products or services do they offer?' },
+          { key: 'targetCustomers', label: 'Target Customers', prompt: 'Who are the ideal customers? Local, national? Homeowners, businesses, contractors?' },
+          { key: 'uniqueValue', label: 'What Makes Them Special', prompt: 'What sets this business apart from competitors? Quality, experience, style, pricing?' },
+        ],
+      },
+      {
+        id: 'pages', title: 'Pages & Content', icon: '📄',
+        fields: [
+          { key: 'pages', label: 'Pages Needed', prompt: 'What pages should the site have? (e.g. Home, About, Services, Gallery, Contact)' },
+          { key: 'heroMessage', label: 'Hero Message', prompt: 'What\'s the first thing visitors should see? The main headline or tagline.' },
+          { key: 'services', label: 'Services / Products', prompt: 'List the main services or product categories to feature on the site.' },
+          { key: 'about', label: 'About / Story', prompt: 'Tell the business story — how it started, who runs it, years of experience, etc.' },
+        ],
+      },
+      {
+        id: 'media', title: 'Photos & Media', icon: '📸',
+        fields: [
+          { key: 'existingPhotos', label: 'Existing Photos', prompt: 'Do you have photos of the work, products, team, or workspace? How many roughly?' },
+          { key: 'photoNeeds', label: 'Photo Needs', prompt: 'Do you need new photos taken, stock photos, or AI-generated images?' },
+          { key: 'videoContent', label: 'Video', prompt: 'Any videos to include? Process videos, testimonials, tours?' },
+          { key: 'portfolio', label: 'Portfolio / Gallery', prompt: 'Should there be a gallery or portfolio section? Describe what to showcase.' },
+        ],
+      },
+      {
+        id: 'brand', title: 'Brand & Style', icon: '🎨',
+        fields: [
+          { key: 'logo', label: 'Logo', prompt: 'Is there an existing logo? If not, do you need one designed?' },
+          { key: 'colors', label: 'Colors', prompt: 'Any preferred colors? Or describe the vibe — rustic, modern, warm, bold?' },
+          { key: 'style', label: 'Visual Style', prompt: 'What should the site feel like? Clean and minimal, rustic and warm, bold and modern?' },
+          { key: 'inspiration', label: 'Sites You Like', prompt: 'Links to any websites you admire — they don\'t have to be in the same industry.' },
+        ],
+      },
+      {
+        id: 'features', title: 'Features & Functionality', icon: '⚙️',
+        fields: [
+          { key: 'contactForm', label: 'Contact / Quote Form', prompt: 'What kind of contact form? Simple contact, request a quote, book a consultation?' },
+          { key: 'socialMedia', label: 'Social Media', prompt: 'Which social accounts to link? Instagram, Facebook, YouTube, etc.' },
+          { key: 'ecommerce', label: 'Online Sales', prompt: 'Will customers buy anything online? Products, gift cards, deposits?' },
+          { key: 'otherFeatures', label: 'Other Features', prompt: 'Anything else? Blog, testimonials section, Google Maps embed, scheduling?' },
+        ],
+      },
+      {
+        id: 'domain', title: 'Domain & Hosting', icon: '🔗',
+        fields: [
+          { key: 'domain', label: 'Domain Name', prompt: 'Do you already own a domain? If not, what domain do you want? (e.g. smithwoodworks.com)' },
+          { key: 'hosting', label: 'Hosting Preference', prompt: 'Any hosting preference? Or should the developer choose? (Vercel, Squarespace, etc.)' },
+          { key: 'email', label: 'Business Email', prompt: 'Need a business email set up? (e.g. info@smithwoodworks.com)' },
+        ],
+      },
+      {
+        id: 'seo', title: 'SEO & Marketing', icon: '📈',
+        fields: [
+          { key: 'location', label: 'Location / Service Area', prompt: 'Where is the business located? What areas do they serve?' },
+          { key: 'keywords', label: 'Search Terms', prompt: 'What would customers search to find this business? (e.g. "custom furniture Austin")' },
+          { key: 'googleBusiness', label: 'Google Business Profile', prompt: 'Is there a Google Business profile? Should one be set up?' },
+          { key: 'analytics', label: 'Analytics', prompt: 'Want to track visitors? Google Analytics, or something simpler?' },
+        ],
+      },
+      {
+        id: 'logistics', title: 'Timeline & Budget', icon: '📅',
+        fields: [
+          { key: 'timeline', label: 'Timeline', prompt: 'When should the site be live? Any upcoming event or deadline driving this?' },
+          { key: 'budget', label: 'Budget', prompt: 'What\'s the budget range? Include ongoing costs (hosting, domain) vs. one-time build.' },
+          { key: 'maintenance', label: 'Ongoing Updates', prompt: 'Who will update the site after launch? The business owner, you, or a developer?' },
+          { key: 'contact', label: 'Point of Contact', prompt: 'Who should the developer talk to? Name, phone, email.' },
+        ],
+      },
     ],
   },
-  {
-    id: 'design', title: 'Design & Creative', icon: '🎨',
-    fields: [
-      { key: 'visualStyle', label: 'Visual Style', prompt: 'Describe the look and feel. Any reference sites or aesthetics you admire?' },
-      { key: 'brandAssets', label: 'Brand Assets', prompt: 'Do you have a logo, colors, fonts, or brand guide? Link them if possible.' },
-      { key: 'contentProvided', label: "Content You'll Provide", prompt: 'What will you supply (copy, images) vs. what you need created?' },
-    ],
-  },
-  {
-    id: 'technical', title: 'Technical Requirements', icon: '⚙️',
-    fields: [
-      { key: 'platform', label: 'Platform', prompt: 'Where will this live? Web, iOS, Android, desktop?' },
-      { key: 'techStack', label: 'Tech Stack', prompt: 'Any preferences on technology? (e.g. React, Firebase, Tailwind)' },
-      { key: 'integrations', label: 'Integrations', prompt: 'Does this need to connect to any APIs or services?' },
-      { key: 'dataStorage', label: 'Data & Storage', prompt: 'What data will this handle and where should it be stored?' },
-    ],
-  },
-  {
-    id: 'timeline', title: 'Timeline & Milestones', icon: '📅',
-    fields: [
-      { key: 'launchDate', label: 'Target Launch', prompt: 'When do you want this done? Give a date or timeframe.' },
-      { key: 'milestones', label: 'Key Milestones', prompt: 'Break it into phases — what are the major checkpoints?' },
-      { key: 'availability', label: 'Your Availability', prompt: 'How many hours/week can you dedicate? What days work best?' },
-      { key: 'communication', label: 'Communication', prompt: 'How should we stay in touch and how often should we sync?' },
-    ],
-  },
-  {
-    id: 'risks', title: 'Risks & Constraints', icon: '⚠️',
-    fields: [
-      { key: 'knownRisks', label: 'Known Risks', prompt: 'What could go wrong or slow things down?' },
-      { key: 'budget', label: 'Budget', prompt: 'Is there a budget? ($0 side project, specific amount, flexible)' },
-      { key: 'constraints', label: 'Other Constraints', prompt: 'Legal, accessibility, or platform constraints?' },
-    ],
-  },
-  {
-    id: 'team', title: 'Team & Roles', icon: '👥',
-    fields: [
-      { key: 'teamMembers', label: 'Team Members', prompt: "Who's involved? List names, roles, and responsibilities." },
-      { key: 'contactInfo', label: 'Contact Info', prompt: 'How can each person be reached? (email, Slack, etc.)' },
-    ],
-  },
-  {
-    id: 'references', title: 'References & Links', icon: '📎',
-    fields: [
-      { key: 'designFiles', label: 'Design Files', prompt: 'Figma files, mockups, or wireframes? Drop links.' },
-      { key: 'existingCode', label: 'Existing Code', prompt: 'GitHub repo or existing codebase to build on?' },
-      { key: 'inspiration', label: 'Inspiration', prompt: 'Links to competitors, articles, mood boards — anything that captures your vision.' },
-    ],
-  },
-];
+};
+
+// Default to general for backwards compatibility
+const SECTIONS = TEMPLATES.general.sections;
 
 /* ───────────────────────── HELPERS ───────────────────────── */
 function TypingDots() {
@@ -102,24 +190,20 @@ function renderMd(text) {
 function mergeChunks(current, incoming) {
   if (!current) return incoming;
   if (!incoming) return current;
-  if (incoming === current || current.endsWith(incoming)) return current;
+  // If incoming is a superset of current, just use incoming
   if (incoming.startsWith(current)) return incoming;
-  // Check for overlap
-  const maxOverlap = Math.min(current.length, incoming.length);
-  for (let i = maxOverlap; i > 0; i--) {
-    if (current.slice(-i) === incoming.slice(0, i)) {
-      return current + incoming.slice(i);
-    }
-  }
-  return current + ' ' + incoming;
+  if (incoming === current || current.endsWith(incoming)) return current;
+  // Simple concatenation — let the cleanup API fix spacing issues later
+  return current + incoming;
 }
 
-function generateBriefText(formData, projectName, senderName) {
+function generateBriefText(formData, projectName, senderName, sections) {
+  const secs = sections || SECTIONS;
   let t = `PROJECT COLLABORATION BRIEF\n${'═'.repeat(40)}\n`;
   if (projectName) t += `Project: ${projectName}\n`;
   if (senderName) t += `Submitted by: ${senderName}\n`;
   t += `Date: ${new Date().toLocaleDateString()}\n`;
-  SECTIONS.forEach(s => {
+  secs.forEach(s => {
     t += `\n${'─'.repeat(40)}\n${s.icon} ${s.title.toUpperCase()}\n${'─'.repeat(40)}\n\n`;
     s.fields.forEach(f => {
       const val = formData[`${s.id}.${f.key}`];
@@ -333,6 +417,8 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
           console.error('[Voice]', err);
           setVoiceActive(false);
           setVoiceConnecting(false);
+          setUserSpeaking(false);
+          finalizeTurn();
           addChatMessage('ai', 'Voice connection lost. Tap the mic to try again.');
         },
         onConnectionChange: (connected) => {
@@ -693,6 +779,7 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
 /* ───────────────────────── INTRO SCREEN ───────────────────────── */
 function IntroScreen({ onStart, onUpload }) {
   const [uploading, setUploading] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState('general');
   const fileRef = useRef(null);
 
   const handleFile = async (e) => {
@@ -701,7 +788,7 @@ function IntroScreen({ onStart, onUpload }) {
     setUploading(true);
     try {
       const text = await file.text();
-      await onUpload(text, file.name);
+      await onUpload(text, file.name, selectedTemplate);
     } catch {
       alert('Could not read file. Try a .txt, .md, or .pdf file.');
     }
@@ -712,16 +799,41 @@ function IntroScreen({ onStart, onUpload }) {
     <div style={{
       height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: 'radial-gradient(ellipse at 50% 30%, rgba(59,130,246,0.08), #0b1121 70%)',
+      overflowY: 'auto',
     }}>
-      <div style={{ maxWidth: 560, padding: '0 24px', textAlign: 'center' }}>
+      <div style={{ maxWidth: 560, padding: '40px 24px', textAlign: 'center' }}>
         <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
         <h1 style={{ fontSize: 28, fontWeight: 800, color: '#f1f5f9', margin: '0 0 8px', lineHeight: 1.3 }}>
           Brief Builder
         </h1>
-        <p style={{ fontSize: 15, color: '#94a3b8', lineHeight: 1.7, margin: '0 0 32px' }}>
+        <p style={{ fontSize: 15, color: '#94a3b8', lineHeight: 1.7, margin: '0 0 28px' }}>
           Build a clear project brief through conversation. Talk or type your way through each section
           — the AI coach will help shape your ideas into a polished document.
         </p>
+
+        {/* Template selector */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
+          {Object.entries(TEMPLATES).map(([key, t]) => (
+            <button
+              key={key}
+              onClick={() => setSelectedTemplate(key)}
+              style={{
+                flex: 1, padding: '16px 14px', borderRadius: 14, cursor: 'pointer',
+                border: selectedTemplate === key ? '2px solid #3b82f6' : '1px solid #253346',
+                background: selectedTemplate === key ? 'rgba(59,130,246,0.08)' : 'rgba(30,41,59,0.3)',
+                textAlign: 'left', fontFamily: 'inherit', transition: 'all 0.15s',
+              }}
+            >
+              <div style={{ fontSize: 24, marginBottom: 8 }}>{t.icon}</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: selectedTemplate === key ? '#e2e8f0' : '#94a3b8' }}>
+                {t.name}
+              </div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 4, lineHeight: 1.4 }}>
+                {t.description}
+              </div>
+            </button>
+          ))}
+        </div>
 
         <div style={{
           display: 'flex', flexDirection: 'column', gap: 10, textAlign: 'left',
@@ -746,7 +858,7 @@ function IntroScreen({ onStart, onUpload }) {
 
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
           <button
-            onClick={onStart}
+            onClick={() => onStart(selectedTemplate)}
             style={{
               padding: '14px 36px', border: 'none', borderRadius: 12,
               background: 'linear-gradient(135deg, #3b82f6, #6366f1)',
@@ -783,19 +895,21 @@ function loadSavedState() {
   }
 }
 
-function saveState(formData, chatHistories, senderName, projectName) {
+function saveState(formData, chatHistories, senderName, projectName, templateKey) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ formData, chatHistories, senderName, projectName }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ formData, chatHistories, senderName, projectName, templateKey }));
   } catch { /* storage full or unavailable */ }
 }
 
 export default function BriefBuilder() {
   const [activeSection, setActiveSection] = useState(0);
+  const [templateKey, setTemplateKey] = useState(() => loadSavedState()?.templateKey ?? 'general');
   const [formData, setFormData] = useState(() => loadSavedState()?.formData ?? {});
   const [chatHistories, setChatHistories] = useState(() => loadSavedState()?.chatHistories ?? {});
   const [showExportModal, setShowExportModal] = useState(false);
   const [senderName, setSenderName] = useState(() => loadSavedState()?.senderName ?? '');
   const [projectName, setProjectName] = useState(() => loadSavedState()?.projectName ?? '');
+  const activeSections = TEMPLATES[templateKey]?.sections ?? SECTIONS;
   const [copied, setCopied] = useState(false);
   const [showIntro, setShowIntro] = useState(() => {
     if (typeof window === 'undefined') return true;
@@ -804,17 +918,19 @@ export default function BriefBuilder() {
     return !localStorage.getItem(INTRO_SEEN_KEY);
   });
 
-  const handleIntroStart = () => {
+  const handleIntroStart = (template) => {
+    setTemplateKey(template || 'general');
     localStorage.setItem(INTRO_SEEN_KEY, '1');
     setShowIntro(false);
   };
 
-  const handleIntroUpload = async (text, fileName) => {
+  const handleIntroUpload = async (text, fileName, template) => {
+    setTemplateKey(template || 'general');
     try {
       const res = await fetch('/api/upload-brief', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, fileName }),
+        body: JSON.stringify({ text, fileName, template: template || 'general' }),
       });
       const data = await res.json();
       if (data.fields && Object.keys(data.fields).length > 0) {
@@ -830,12 +946,12 @@ export default function BriefBuilder() {
 
   // Persist state to localStorage on changes
   useEffect(() => {
-    saveState(formData, chatHistories, senderName, projectName);
-  }, [formData, chatHistories, senderName, projectName]);
+    saveState(formData, chatHistories, senderName, projectName, templateKey);
+  }, [formData, chatHistories, senderName, projectName, templateKey]);
 
   const progress = (() => {
     let done = 0, total = 0;
-    SECTIONS.forEach(s => s.fields.forEach(f => {
+    activeSections.forEach(s => s.fields.forEach(f => {
       total++;
       if (formData[`${s.id}.${f.key}`]) done++;
     }));
@@ -843,7 +959,7 @@ export default function BriefBuilder() {
   })();
 
   const handleCopy = async () => {
-    const briefText = generateBriefText(formData, projectName, senderName);
+    const briefText = generateBriefText(formData, projectName, senderName, activeSections);
     try {
       await navigator.clipboard.writeText(briefText);
       setCopied(true);
@@ -868,6 +984,7 @@ export default function BriefBuilder() {
     setChatHistories({});
     setSenderName('');
     setProjectName('');
+    setTemplateKey('general');
     setActiveSection(0);
     setShowRestartConfirm(false);
     localStorage.removeItem(STORAGE_KEY);
@@ -876,7 +993,7 @@ export default function BriefBuilder() {
   };
 
   const handleDownload = () => {
-    const briefText = generateBriefText(formData, projectName, senderName);
+    const briefText = generateBriefText(formData, projectName, senderName, activeSections);
     const blob = new Blob([briefText], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -923,7 +1040,7 @@ export default function BriefBuilder() {
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
-          {SECTIONS.map((s, i) => {
+          {activeSections.map((s, i) => {
             const filled = s.fields.filter(f => formData[`${s.id}.${f.key}`]).length;
             const complete = filled === s.fields.length;
             const isActive = i === activeSection;
@@ -1008,8 +1125,8 @@ export default function BriefBuilder() {
       {/* ─── MAIN CHAT ─── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <SectionChat
-          key={SECTIONS[activeSection].id}
-          section={SECTIONS[activeSection]}
+          key={activeSections[activeSection].id}
+          section={activeSections[activeSection]}
           formData={formData}
           setFormData={setFormData}
           chatHistories={chatHistories}
@@ -1073,7 +1190,7 @@ export default function BriefBuilder() {
                 margin: 0, fontSize: 11.5, color: '#8896a8', lineHeight: 1.6,
                 whiteSpace: 'pre-wrap', fontFamily: "'JetBrains Mono', monospace",
               }}>
-                {generateBriefText(formData, projectName, senderName)}
+                {generateBriefText(formData, projectName, senderName, activeSections)}
               </pre>
             </div>
 
