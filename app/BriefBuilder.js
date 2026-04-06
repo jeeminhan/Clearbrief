@@ -710,6 +710,18 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
             background: '#141e30', border: '1px solid #253346',
             borderRadius: 14, padding: '12px 16px',
           }}>
+            {!allDone && (
+              <button
+                onClick={handleSkip}
+                title="Skip this field"
+                style={{
+                  height: 36, padding: '0 10px', borderRadius: 10,
+                  border: '1px solid #253346', background: 'transparent',
+                  color: '#64748b', fontSize: 11, fontWeight: 600, fontFamily: 'inherit',
+                  cursor: 'pointer', flexShrink: 0, letterSpacing: '0.02em',
+                }}
+              >Skip</button>
+            )}
             <span style={{ fontSize: 12, color: '#94a3b8' }}>Listening...</span>
             <button
               onClick={handleVoiceToggle}
