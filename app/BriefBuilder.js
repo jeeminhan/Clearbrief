@@ -179,6 +179,7 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
   // Voice state
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceConnecting, setVoiceConnecting] = useState(false);
+  const [userSpeaking, setUserSpeaking] = useState(false);
   const audioManagerRef = useRef(null);
   const geminiClientRef = useRef(null);
   const formDataRef = useRef(formData);
@@ -280,6 +281,7 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
       geminiClientRef.current = null;
       setVoiceActive(false);
       setVoiceConnecting(false);
+      setUserSpeaking(false);
       finalizeTurn();
       addChatMessage('ai', 'Voice chat ended. You can keep typing or tap the mic to start again.');
       return;
@@ -302,7 +304,13 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
         systemPrompt,
         tools: VOICE_TOOLS,
         onAudioResponse: (pcmData) => { audioManager.playAudio(pcmData); },
-        onTranscript: (role, text) => { appendTranscript(role, text); },
+        onTranscript: (role, text) => {
+          if (role === 'user') setUserSpeaking(false);
+          appendTranscript(role, text);
+        },
+        onInterrupted: () => { audioManager.stopPlayback(); },
+        onUserSpeechStart: () => { setUserSpeaking(true); },
+        onUserSpeechEnd: () => { /* keep showing until transcript arrives */ },
         onToolCall: ({ id, name, args }) => {
           if (name === 'save_field' && args.fieldKey && args.answer) {
             const fullKey = `${section.id}.${args.fieldKey}`;
@@ -550,6 +558,25 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
             </div>
           </div>
         ))}
+        {userSpeaking && voiceActive && (
+          <div style={{
+            display: 'flex', justifyContent: 'flex-end', marginBottom: 14,
+            animation: 'fadeIn 0.2s ease',
+          }}>
+            <div style={{
+              padding: '10px 16px', borderRadius: '16px 16px 4px 16px',
+              background: 'rgba(59,130,246,0.15)', border: '1px dashed rgba(59,130,246,0.4)',
+              color: '#60a5fa', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{ display: 'inline-flex', gap: 3 }}>
+                <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#60a5fa', animation: 'pulse 1s ease-in-out infinite' }} />
+                <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#60a5fa', animation: 'pulse 1s ease-in-out 0.15s infinite' }} />
+                <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#60a5fa', animation: 'pulse 1s ease-in-out 0.3s infinite' }} />
+              </span>
+              Listening...
+            </div>
+          </div>
+        )}
         {isLoading && (
           <div style={{ marginBottom: 14 }}>
             <div style={{
