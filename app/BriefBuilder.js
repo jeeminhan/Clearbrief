@@ -224,19 +224,24 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
   }, [section.id, setChatHistories]);
 
   const cleanupTranscript = useCallback(async (msgIndex) => {
-    // Get the current text at this index
-    const msgs = chatHistories[section.id] || [];
-    const msg = msgs[msgIndex];
-    if (!msg || msg.text.length < 5) return;
+    // Read current state via functional updater to avoid stale closure
+    let textToClean = '';
+    setChatHistories(prev => {
+      const msgs = prev[section.id] || [];
+      textToClean = msgs[msgIndex]?.text || '';
+      return prev; // no mutation, just reading
+    });
+
+    if (!textToClean || textToClean.length < 5) return;
 
     try {
       const res = await fetch('/api/cleanup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: msg.text }),
+        body: JSON.stringify({ text: textToClean }),
       });
       const { cleaned } = await res.json();
-      if (cleaned && cleaned !== msg.text) {
+      if (cleaned && cleaned !== textToClean) {
         setChatHistories(prev => {
           const updated = [...(prev[section.id] || [])];
           if (updated[msgIndex]) {
@@ -246,7 +251,7 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
         });
       }
     } catch { /* silent fail — raw transcript stays */ }
-  }, [section.id, chatHistories, setChatHistories]);
+  }, [section.id, setChatHistories]);
 
   const finalizeTurn = useCallback(() => {
     // Clean up any pending transcript messages
@@ -302,10 +307,17 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
           if (name === 'save_field' && args.fieldKey && args.answer) {
             const fullKey = `${section.id}.${args.fieldKey}`;
             setFormData(prev => ({ ...prev, [fullKey]: args.answer }));
-            addChatMessage('ai', `Saved **${args.fieldKey}**: "${args.answer}"`);
-            client.sendToolResponse(id, name, { success: true });
+            // Lightweight append — don't trigger finalizeTurn/cleanup during voice
+            setChatHistories(prev => ({
+              ...prev,
+              [section.id]: [...(prev[section.id] || []), {
+                role: 'ai', text: `Saved **${args.fieldKey}**: "${args.answer}"`,
+                id: Date.now() + Math.random(),
+              }],
+            }));
+            try { client.sendToolResponse(id, name, { success: true }); } catch (e) { console.error('[Voice] Tool response failed:', e); }
           } else {
-            client.sendToolResponse(id, name, { error: 'Unknown tool' });
+            try { client.sendToolResponse(id, name, { error: 'Unknown tool' }); } catch (e) { console.error('[Voice] Tool response failed:', e); }
           }
         },
         onTurnComplete: () => { finalizeTurn(); },
@@ -498,6 +510,25 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
             );
           })}
         </div>
+        {/* Show saved answers preview */}
+        {section.fields.some(f => formData[`${section.id}.${f.key}`]) && (
+          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {section.fields.map(f => {
+              const val = formData[`${section.id}.${f.key}`];
+              if (!val || val === '(Skipped)') return null;
+              return (
+                <div key={f.key} style={{
+                  fontSize: 11, color: '#8896a8', lineHeight: 1.5,
+                  padding: '6px 10px', borderRadius: 8,
+                  background: 'rgba(15,23,42,0.6)', border: '1px solid #1a2536',
+                }}>
+                  <span style={{ color: '#4ade80', fontWeight: 600 }}>{f.label}:</span>{' '}
+                  {val.length > 120 ? val.slice(0, 120) + '...' : val}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
@@ -632,8 +663,88 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
   );
 }
 
+/* ───────────────────────── INTRO SCREEN ───────────────────────── */
+function IntroScreen({ onStart, onUpload }) {
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef(null);
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const text = await file.text();
+      await onUpload(text, file.name);
+    } catch {
+      alert('Could not read file. Try a .txt, .md, or .pdf file.');
+    }
+    setUploading(false);
+  };
+
+  return (
+    <div style={{
+      height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'radial-gradient(ellipse at 50% 30%, rgba(59,130,246,0.08), #0b1121 70%)',
+    }}>
+      <div style={{ maxWidth: 560, padding: '0 24px', textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
+        <h1 style={{ fontSize: 28, fontWeight: 800, color: '#f1f5f9', margin: '0 0 8px', lineHeight: 1.3 }}>
+          Brief Builder
+        </h1>
+        <p style={{ fontSize: 15, color: '#94a3b8', lineHeight: 1.7, margin: '0 0 32px' }}>
+          Build a clear project brief through conversation. Talk or type your way through each section
+          — the AI coach will help shape your ideas into a polished document.
+        </p>
+
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 10, textAlign: 'left',
+          padding: '20px 24px', borderRadius: 14,
+          background: 'rgba(30,41,59,0.3)', border: '1px solid #1e293b', marginBottom: 32,
+        }}>
+          {[
+            ['🎙️', 'Voice or text', 'Talk naturally or type — the AI extracts what matters'],
+            ['⏭️', 'Skip anything', 'Every section is optional. Skip fields and come back later'],
+            ['📄', 'Upload a doc', 'Have an existing brief? Upload it and AI fills in the fields'],
+            ['📋', 'Export when ready', 'Copy or download your polished brief at any time'],
+          ].map(([icon, title, desc]) => (
+            <div key={title} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>{icon}</span>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>{title}</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+          <button
+            onClick={onStart}
+            style={{
+              padding: '14px 36px', border: 'none', borderRadius: 12,
+              background: 'linear-gradient(135deg, #3b82f6, #6366f1)',
+              color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >Start from scratch</button>
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            style={{
+              padding: '14px 28px', border: '1px solid #253346', borderRadius: 12,
+              background: 'transparent', color: '#94a3b8', fontSize: 15, fontWeight: 500,
+              cursor: uploading ? 'default' : 'pointer', fontFamily: 'inherit',
+            }}
+          >{uploading ? 'Reading...' : 'Upload a document'}</button>
+          <input ref={fileRef} type="file" accept=".txt,.md,.csv,.json,.doc,.docx,.pdf" onChange={handleFile} style={{ display: 'none' }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ───────────────────────── MAIN APP ───────────────────────── */
 const STORAGE_KEY = 'briefbuilder_state';
+const INTRO_SEEN_KEY = 'briefbuilder_intro_seen';
 
 function loadSavedState() {
   if (typeof window === 'undefined') return null;
@@ -659,6 +770,36 @@ export default function BriefBuilder() {
   const [senderName, setSenderName] = useState(() => loadSavedState()?.senderName ?? '');
   const [projectName, setProjectName] = useState(() => loadSavedState()?.projectName ?? '');
   const [copied, setCopied] = useState(false);
+  const [showIntro, setShowIntro] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    const saved = loadSavedState();
+    if (saved?.formData && Object.keys(saved.formData).length > 0) return false;
+    return !localStorage.getItem(INTRO_SEEN_KEY);
+  });
+
+  const handleIntroStart = () => {
+    localStorage.setItem(INTRO_SEEN_KEY, '1');
+    setShowIntro(false);
+  };
+
+  const handleIntroUpload = async (text, fileName) => {
+    try {
+      const res = await fetch('/api/upload-brief', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, fileName }),
+      });
+      const data = await res.json();
+      if (data.fields && Object.keys(data.fields).length > 0) {
+        setFormData(prev => ({ ...prev, ...data.fields }));
+      }
+    } catch {
+      alert('Upload failed. Please try again.');
+      return;
+    }
+    localStorage.setItem(INTRO_SEEN_KEY, '1');
+    setShowIntro(false);
+  };
 
   // Persist state to localStorage on changes
   useEffect(() => {
@@ -703,6 +844,8 @@ export default function BriefBuilder() {
     setActiveSection(0);
     setShowRestartConfirm(false);
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(INTRO_SEEN_KEY);
+    setShowIntro(true);
   };
 
   const handleDownload = () => {
@@ -717,6 +860,10 @@ export default function BriefBuilder() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
+
+  if (showIntro) {
+    return <IntroScreen onStart={handleIntroStart} onUpload={handleIntroUpload} />;
+  }
 
   return (
     <div style={{ height: '100vh', display: 'flex' }}>
