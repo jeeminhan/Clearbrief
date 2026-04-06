@@ -198,7 +198,7 @@ function generateBriefText(formData, projectName, senderName, sections) {
     t += `\n${'─'.repeat(40)}\n${s.icon} ${s.title.toUpperCase()}\n${'─'.repeat(40)}\n\n`;
     s.fields.forEach(f => {
       const val = formData[`${s.id}.${f.key}`];
-      t += `${f.label}:\n${val || '(Not filled)'}\n\n`;
+      t += `${f.label}:\n${val === '__skipped__' ? '(Skipped)' : val || '(Not filled)'}\n\n`;
     });
   });
   return t;
@@ -208,7 +208,8 @@ function generateBriefText(formData, projectName, senderName, sections) {
 function buildVoiceSystemPrompt(section, formData) {
   const fieldStatus = section.fields.map(f => {
     const val = formData[`${section.id}.${f.key}`];
-    return `- ${f.label}: ${val || '(empty)'} — Prompt: ${f.prompt}`;
+    const skipped = val === '__skipped__';
+    return `- fieldKey="${f.key}" (${f.label}): ${skipped ? '(skipped)' : val || '(empty)'} — Prompt: ${f.prompt}`;
   }).join('\n');
 
   return `You are a relaxed, friendly project brief coach having a casual voice conversation. You're helping the user fill out the "${section.title}" section of a project brief.
@@ -219,9 +220,11 @@ ${fieldStatus}
 RULES:
 - Talk like a friend, not a form. Be warm, casual, and encouraging.
 - Listen to what the user says and extract useful information for the brief fields.
-- When you hear something that answers a field (even roughly), call the save_field tool with a clean, polished version of what they said.
+- When you hear something that answers a field (even roughly), call the save_field tool with the EXACT fieldKey shown above (e.g. "${section.fields[0]?.key}") and a clean, polished version of what they said.
+- IMPORTANT: The fieldKey must be the exact key in quotes above, NOT the label. For example use "${section.fields[0]?.key}" not "${section.fields[0]?.label}".
+- If the user wants to skip a field, call save_field with the fieldKey and answer set to "__skipped__".
 - You can fill multiple fields from a single rambling answer — extract everything useful.
-- Don't demand perfect answers. If they say "it's like an app for tracking travel credit card points", that's a perfectly good one-liner — save it.
+- Don't demand perfect answers. If they say something rough, clean it up and save it.
 - Guide the conversation naturally toward unfilled fields, but don't be rigid about order.
 - Keep your spoken responses SHORT — 1-2 sentences max. This is a conversation, not a lecture.
 - When all fields in this section are filled, let them know and suggest moving to the next section.`;
@@ -387,13 +390,28 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
         onUserSpeechEnd: () => { /* keep showing until transcript arrives */ },
         onToolCall: ({ id, name, args }) => {
           if (name === 'save_field' && args.fieldKey && args.answer) {
-            const fullKey = `${section.id}.${args.fieldKey}`;
+            // Resolve fieldKey — AI might send the label instead of the key
+            let resolvedKey = args.fieldKey;
+            const exactMatch = section.fields.find(f => f.key === args.fieldKey);
+            if (!exactMatch) {
+              const labelMatch = section.fields.find(f =>
+                f.label.toLowerCase() === args.fieldKey.toLowerCase() ||
+                f.label.toLowerCase().replace(/[^a-z]/g, '') === args.fieldKey.toLowerCase().replace(/[^a-z]/g, '')
+              );
+              if (labelMatch) resolvedKey = labelMatch.key;
+            }
+
+            const fullKey = `${section.id}.${resolvedKey}`;
+            const isSkip = args.answer === '__skipped__';
             setFormData(prev => ({ ...prev, [fullKey]: args.answer }));
-            // Lightweight append — don't trigger finalizeTurn/cleanup during voice
+
+            const field = section.fields.find(f => f.key === resolvedKey);
+            const displayLabel = field?.label || resolvedKey;
             setChatHistories(prev => ({
               ...prev,
               [section.id]: [...(prev[section.id] || []), {
-                role: 'ai', text: `Saved **${args.fieldKey}**: "${args.answer}"`,
+                role: 'ai',
+                text: isSkip ? `Skipped **${displayLabel}**` : `Saved **${displayLabel}**: "${args.answer}"`,
                 id: Date.now() + Math.random(),
               }],
             }));
@@ -505,8 +523,8 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
     const allDone = section.fields.filter(f => formData[`${section.id}.${f.key}`]).length === section.fields.length;
     if (allDone) return;
 
-    // Save empty/skip marker so we advance past this field
-    setFormData(prev => ({ ...prev, [`${section.id}.${field.key}`]: '(Skipped)' }));
+    // Save skip marker so we advance past this field
+    setFormData(prev => ({ ...prev, [`${section.id}.${field.key}`]: '__skipped__' }));
     setPendingAnswer('');
 
     const skipMsg = { role: 'user', text: '⏭ Skipped', id: Date.now() };
@@ -581,16 +599,18 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
         </div>
         <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
           {section.fields.map((f, i) => {
-            const filled = !!formData[`${section.id}.${f.key}`];
+            const val = formData[`${section.id}.${f.key}`];
+            const skipped = val === '__skipped__';
+            const filled = !!val && !skipped;
             const isCurrent = i === getCurrentFieldIndex() && !allDone;
             return (
               <span key={f.key} style={{
                 fontSize: 11, padding: '3px 10px', borderRadius: 20,
-                background: filled ? 'rgba(34,197,94,0.12)' : isCurrent ? 'rgba(59,130,246,0.12)' : '#131c2e',
-                color: filled ? '#4ade80' : isCurrent ? '#60a5fa' : '#475569',
+                background: filled ? 'rgba(34,197,94,0.12)' : skipped ? 'rgba(234,179,8,0.12)' : isCurrent ? 'rgba(59,130,246,0.12)' : '#131c2e',
+                color: filled ? '#4ade80' : skipped ? '#eab308' : isCurrent ? '#60a5fa' : '#475569',
                 border: isCurrent ? '1px solid rgba(59,130,246,0.3)' : '1px solid transparent',
                 fontWeight: isCurrent ? 600 : 400,
-              }}>{filled && '✓ '}{f.label}</span>
+              }}>{filled ? '✓ ' : skipped ? '⏭ ' : ''}{f.label}</span>
             );
           })}
         </div>
@@ -599,7 +619,7 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
           <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {section.fields.map(f => {
               const val = formData[`${section.id}.${f.key}`];
-              if (!val || val === '(Skipped)') return null;
+              if (!val || val === '__skipped__') return null;
               return (
                 <div key={f.key} style={{
                   fontSize: 11, color: '#8896a8', lineHeight: 1.5,
