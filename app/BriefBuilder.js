@@ -636,6 +636,23 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
         )}
       </div>
 
+      {/* Skip hint — show until user has interacted with a few fields */}
+      {messages.length <= 2 && (
+        <div style={{
+          padding: '8px 20px',
+          animation: 'bounce 2s ease-in-out infinite',
+        }}>
+          <div style={{
+            fontSize: 12, color: '#64748b', background: 'rgba(234,179,8,0.08)',
+            border: '1px solid rgba(234,179,8,0.2)', borderRadius: 10,
+            padding: '8px 14px', display: 'inline-flex', alignItems: 'center', gap: 6,
+          }}>
+            <span style={{ fontSize: 14 }}>⏭</span>
+            You can skip any field — just say &quot;skip&quot; or tap the Skip button. Come back anytime!
+          </div>
+        </div>
+      )}
+
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
         {messages.map(msg => (
           <div key={msg.id} style={{
