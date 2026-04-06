@@ -187,15 +187,6 @@ function renderMd(text) {
   });
 }
 
-function mergeChunks(current, incoming) {
-  if (!current) return incoming;
-  if (!incoming) return current;
-  // If incoming is a superset of current, just use incoming
-  if (incoming.startsWith(current)) return incoming;
-  if (incoming === current || current.endsWith(incoming)) return current;
-  // Simple concatenation — let the cleanup API fix spacing issues later
-  return current + incoming;
-}
 
 function generateBriefText(formData, projectName, senderName, sections) {
   const secs = sections || SECTIONS;
@@ -281,8 +272,7 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
   const pendingTranscriptRef = useRef({ user: null, model: null });
 
   const appendTranscript = useCallback((role, text) => {
-    const normalized = text.replace(/\s+/g, ' ').trim();
-    if (!normalized) return;
+    if (!text || !text.trim()) return;
     const chatRole = role === 'user' ? 'user' : 'ai';
     const otherRole = role === 'user' ? 'model' : 'user';
 
@@ -294,14 +284,14 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
       pendingTranscriptRef.current[otherRole] = null;
 
       if (ownIdx != null && msgs[ownIdx] && msgs[ownIdx].role === chatRole) {
-        // Merge into existing pending message
-        const existing = msgs[ownIdx].text;
-        msgs[ownIdx] = { ...msgs[ownIdx], text: mergeChunks(existing, normalized) };
+        // Append directly — preserve Gemini's spacing, clean up on display
+        const merged = (msgs[ownIdx].text + text).replace(/\s+/g, ' ').trim();
+        msgs[ownIdx] = { ...msgs[ownIdx], text: merged };
         return { ...prev, [section.id]: msgs };
       }
 
       // Start a new message
-      const newMsg = { role: chatRole, text: normalized, id: Date.now() + Math.random() };
+      const newMsg = { role: chatRole, text: text.trim(), id: Date.now() + Math.random() };
       msgs.push(newMsg);
       pendingTranscriptRef.current[role] = msgs.length - 1;
       return { ...prev, [section.id]: msgs };
