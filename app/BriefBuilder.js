@@ -575,7 +575,7 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{
+      <div className="section-header" style={{
         padding: '18px 24px', borderBottom: '1px solid #1e293b',
         background: 'linear-gradient(180deg, rgba(30,41,59,0.4), transparent)',
       }}>
@@ -589,7 +589,7 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
             padding: '3px 10px', borderRadius: 12,
           }}>{filledCount}/{section.fields.length}</span>
         </div>
-        <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
+        <div className="field-chips" style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
           {section.fields.map((f, i) => {
             const val = formData[`${section.id}.${f.key}`];
             const skipped = val === '__skipped__';
@@ -644,14 +644,14 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+      <div className="chat-messages" style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
         {messages.map(msg => (
           <div key={msg.id} style={{
             display: 'flex',
             justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
             marginBottom: 14, animation: 'fadeIn 0.25s ease',
           }}>
-            <div style={{
+            <div className="msg-bubble" style={{
               maxWidth: '80%', padding: '12px 16px',
               borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
               background: msg.role === 'user' ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : '#1a2332',
@@ -693,7 +693,7 @@ function SectionChat({ section, formData, setFormData, chatHistories, setChatHis
         <div ref={chatEndRef} />
       </div>
 
-      <div style={{ padding: '14px 20px', background: 'linear-gradient(transparent, #0b1121 40%)' }}>
+      <div className="chat-input-bar" style={{ padding: '14px 20px', background: 'linear-gradient(transparent, #0b1121 40%)' }}>
         {voiceActive ? (
           /* Voice mode: centered stop button */
           <div style={{
@@ -832,9 +832,9 @@ function IntroScreen({ onStart, onUpload }) {
       background: 'radial-gradient(ellipse at 50% 30%, rgba(59,130,246,0.08), #0b1121 70%)',
       overflowY: 'auto',
     }}>
-      <div style={{ maxWidth: 560, padding: '40px 24px', textAlign: 'center' }}>
+      <div className="intro-wrapper" style={{ maxWidth: 560, padding: '40px 24px', textAlign: 'center' }}>
         <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
-        <h1 style={{ fontSize: 28, fontWeight: 800, color: '#f1f5f9', margin: '0 0 8px', lineHeight: 1.3 }}>
+        <h1 className="intro-title" style={{ fontSize: 28, fontWeight: 800, color: '#f1f5f9', margin: '0 0 8px', lineHeight: 1.3 }}>
           Brief Builder
         </h1>
         <p style={{ fontSize: 15, color: '#94a3b8', lineHeight: 1.7, margin: '0 0 28px' }}>
@@ -843,7 +843,7 @@ function IntroScreen({ onStart, onUpload }) {
         </p>
 
         {/* Template selector */}
-        <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
+        <div className="template-selector" style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
           {Object.entries(TEMPLATES).map(([key, t]) => (
             <button
               key={key}
@@ -887,7 +887,7 @@ function IntroScreen({ onStart, onUpload }) {
           ))}
         </div>
 
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+        <div className="intro-buttons" style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
           <button
             onClick={() => onStart(selectedTemplate)}
             style={{
@@ -1009,6 +1009,7 @@ export default function BriefBuilder() {
   };
 
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleRestart = () => {
     setFormData({});
@@ -1042,8 +1043,13 @@ export default function BriefBuilder() {
 
   return (
     <div style={{ height: '100vh', display: 'flex' }}>
+      {/* ─── SIDEBAR OVERLAY (mobile) ─── */}
+      {sidebarOpen && (
+        <div className="sidebar-overlay open" onClick={() => setSidebarOpen(false)} />
+      )}
+
       {/* ─── SIDEBAR ─── */}
-      <div style={{
+      <div className={`sidebar${sidebarOpen ? ' open' : ''}`} style={{
         width: 260, flexShrink: 0, background: '#0d1525', borderRight: '1px solid #1a2536',
         display: 'flex', flexDirection: 'column',
       }}>
@@ -1078,7 +1084,7 @@ export default function BriefBuilder() {
             return (
               <button
                 key={s.id}
-                onClick={() => setActiveSection(i)}
+                onClick={() => { setActiveSection(i); setSidebarOpen(false); }}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 10, width: '100%',
                   padding: '11px 18px', border: 'none', cursor: 'pointer',
@@ -1154,7 +1160,34 @@ export default function BriefBuilder() {
       </div>
 
       {/* ─── MAIN CHAT ─── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div className="main-chat" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        {/* Mobile header */}
+        <div className="mobile-header" style={{ display: 'none' }}>
+          <button
+            onClick={() => setSidebarOpen(true)}
+            style={{
+              width: 36, height: 36, borderRadius: 8, border: '1px solid #253346',
+              background: 'transparent', color: '#e2e8f0', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', color: '#3b82f6', textTransform: 'uppercase' }}>
+              Brief Builder
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {activeSections[activeSection].icon} {activeSections[activeSection].title}
+            </div>
+          </div>
+          <span style={{ fontSize: 11, color: '#64748b', flexShrink: 0 }}>{progress.pct}%</span>
+        </div>
+
         <SectionChat
           key={activeSections[activeSection].id}
           section={activeSections[activeSection]}
@@ -1173,6 +1206,7 @@ export default function BriefBuilder() {
           zIndex: 100, backdropFilter: 'blur(4px)', animation: 'fadeIn 0.2s ease',
         }} onClick={() => { setShowExportModal(false); setCopied(false); }}>
           <div
+            className="export-modal-content"
             style={{
               background: '#131c2e', border: '1px solid #253346',
               borderRadius: 18, width: 500, maxWidth: '90vw',
@@ -1188,7 +1222,7 @@ export default function BriefBuilder() {
               {progress.pct < 100 && ` (${progress.total - progress.done} fields still empty)`}
             </p>
 
-            <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
+            <div className="export-inputs" style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
               <div style={{ flex: 1 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', display: 'block', marginBottom: 5 }}>Your Name</label>
                 <input value={senderName} onChange={e => setSenderName(e.target.value)} placeholder="e.g. Alex Kim"
@@ -1226,7 +1260,7 @@ export default function BriefBuilder() {
             </div>
 
             {/* Actions */}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <div className="export-actions" style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button
                 onClick={() => { setShowExportModal(false); setCopied(false); }}
                 style={{
